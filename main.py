@@ -4,46 +4,70 @@ from datetime import datetime
 app = FastAPI()
 
 
-# --- Root Check ---
+# ------------------- Root Health Check -------------------
 @app.get("/")
 def root():
-    return {"status": "ZKTeco ADMS Server Online"}
+    return {"status": "server_online", "time": str(datetime.utcnow())}
 
 
-# --- ZKTeco ADMS Endpoint ---
+# ------------------- ESP32 Attendance (JSON) -------------------
+@app.post("/attendance")
+async def attendance_log(req: Request):
+    """
+    ESP32 sends:
+    {
+        "device": "gate1",
+        "user": "1005",
+        "event": "check_in",
+        "timestamp": "2025-01-01 10:30:10"
+    }
+    """
+
+    data = await req.json()
+
+    print("\n------ ESP32 Attendance ------")
+    print(f"Device: {data.get('device')}")
+    print(f"User: {data.get('user')}")
+    print(f"Event: {data.get('event')}")
+    print(f"Timestamp: {data.get('timestamp')}")
+    print("--------------------------------")
+
+    return {
+        "status": "ok",
+        "received_at": str(datetime.utcnow())
+    }
+
+
+# ------------------- ESP32 Heartbeat -------------------
+@app.get("/heartbeat")
+def heartbeat():
+    return {"status": "alive", "time": str(datetime.utcnow())}
+
+
+# ------------------- ZKTeco ADMS Raw Logs -------------------
 @app.post("/iclock/cdata")
-async def receive_logs(request: Request):
+async def zkteco_logs(request: Request):
     """
-    ZKTeco devices send attendance logs to:
-    /iclock/cdata
-
-    Logs come as raw text like:
-    POST: PIN=1&Time=2024-01-01 09:00:00&Status=0
+    Handles raw logs coming from ZKTeco devices.
     """
-
     body = await request.body()
     raw = body.decode(errors="ignore")
 
-    print("\n--- ZKTeco Log Received ---")
+    print("\n------ ZKTeco Log ------")
     print(raw)
-    print("-----------------------------")
+    print("-------------------------")
 
-    # Return OK so device stops retrying
     return "OK"
 
 
-# --- ZKTeco Device 'getrequest' response ---
+# ------------------- Required by ZKTeco -------------------
 @app.get("/iclock/getrequest")
-def get_request():
-    """
-    Device calls this before sending logs.
-    Always respond with OK.
-    """
+def zkteco_getreq():
     return "OK"
 
 
-# --- Optional: test endpoint for manual verification ---
+# ------------------- Manual JSON test -------------------
 @app.post("/test")
 async def test_data(req: Request):
-    body = await req.json()
-    return {"received": body, "timestamp": str(datetime.utcnow())}
+    data = await req.json()
+    return {"received": data, "timestamp": str(datetime.utcnow())}
