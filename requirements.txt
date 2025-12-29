@@ -3,4 +3,3 @@ uvicorn
 jinja2
 python-multipart
 openpyxl
-sqlite3-binary
