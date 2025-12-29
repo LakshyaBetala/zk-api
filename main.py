@@ -12,7 +12,6 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-
 @app.get("/")
 def root():
     return {"status": "server_online", "time": str(datetime.utcnow())}
@@ -32,14 +31,10 @@ async def dashboard(request: Request):
 async def dashboard_post(request: Request, date: str = Form(...)):
     logs = get_logs_by_date(date)
 
-    final_logs = []
-    for pin, name, timestamp, status in logs:
-        final_logs.append((pin, name, timestamp, status))
-
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "selected_date": date,
-        "logs": final_logs
+        "logs": logs
     })
 
 
