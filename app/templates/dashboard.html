@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Attendance Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="container">
+    <h1>Attendance Export</h1>
+
+    <label>Select Date:</label>
+    <input type="date" id="datePicker">
+
+    <button onclick="downloadFile()">Download XLSX</button>
+</div>
+
+<script>
+function downloadFile() {
+    const date = document.getElementById('datePicker').value;
+    if (!date) {
+        alert("Select a date first");
+        return;
+    }
+    window.location.href = `/attendance/xlsx?date=${date}`;
+}
+</script>
+
+</body>
+</html>
