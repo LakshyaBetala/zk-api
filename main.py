@@ -1,123 +1,108 @@
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from datetime import datetime
-import sqlite3
-import os
-from generate_excel import generate_excel
-from names import EMPLOYEE_NAMES   # Mapping PIN → Name
-
+from db import insert_attendance, get_attendance_by_date
+from names import EMPLOYEE_NAMES
+from generate_excel import create_excel
 
 app = FastAPI()
 
-# Attach HTML templates and static directory
-templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 
-DB_PATH = "attendance.db"
-
-
-# ---------------------- Database Init ----------------------
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT,
-            name TEXT,
-            timestamp TEXT,
-            status TEXT
-        )
-    """)
-
-    conn.commit()
-    conn.close()
-
-
-init_db()
-
-
-# ---------------------- Root Check ----------------------
+# ---------------------- Root Health Check ----------------------
 @app.get("/")
 def root():
     return {"status": "server_online", "time": str(datetime.utcnow())}
 
 
-# ---------------------- ESP32 Attendance ----------------------
+# ---------------------- Dashboard ----------------------
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    today = datetime.now().strftime("%Y-%m-%d")
+    return templates.TemplateResponse("dashboard.html", {"request": request, "selected_date": today})
+
+
+@app.post("/dashboard", response_class=HTMLResponse)
+async def dashboard_post(request: Request, date: str = Form(...)):
+    logs = get_attendance_by_date(date)
+
+    # Replace user IDs with names if present
+    final_logs = []
+    for row in logs:
+        user_id, timestamp, status = row
+        name = EMPLOYEE_NAMES.get(str(user_id), "Unknown")
+        final_logs.append((user_id, name, timestamp, status))
+
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "selected_date": date,
+            "logs": final_logs
+        }
+    )
+
+
+# ---------------------- Download XLSX ----------------------
+@app.get("/download")
+async def download_excel(date: str):
+    filepath = create_excel(date)
+    return FileResponse(filepath, filename=f"{date}.xlsx")
+
+
+# ---------------------- ESP32 JSON Attendance ----------------------
 @app.post("/attendance")
-async def attendance_log(req: Request):
+async def esp32_attendance(req: Request):
     data = await req.json()
 
     user = data.get("user")
-    event = data.get("event")
-    ts = data.get("timestamp")
+    timestamp = data.get("timestamp", str(datetime.utcnow()))
+    event = data.get("event", "UNKNOWN")
 
-    name = EMPLOYEE_NAMES.get(user, "Unknown")
+    insert_attendance(user, timestamp, event)
 
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO logs (user_id, name, timestamp, status) VALUES (?, ?, ?, ?)",
-        (user, name, ts, event),
-    )
-    conn.commit()
-    conn.close()
+    print("\n------ ESP32 Attendance ------")
+    print(data)
+    print("--------------------------------")
 
-    return {"status": "saved", "user": user, "time": ts}
+    return {"status": "ok", "stored": True}
 
 
 # ---------------------- ZKTeco ADMS Raw Logs ----------------------
 @app.post("/iclock/cdata")
 async def zkteco_logs(request: Request):
-    raw_bytes = await request.body()
-    raw = raw_bytes.decode(errors="ignore")
+    body = await request.body()
+    raw = body.decode(errors="ignore")
 
-    print("\n------ ZKTeco Log ------")
-    print(raw)
-    print("-------------------------")
+    # Parse raw ADMS logs (ZKTeco format)
+    # Example: PIN=12&Time=2025-01-01 09:00:00&Status=0
+    if "PIN=" in raw:
+        fields = dict(x.split("=") for x in raw.split("&") if "=" in x)
 
-    # Parse format: PIN=10&Time=2025-01-01 10:10:10&Status=0
-    entries = raw.split("\n")
-    for entry in entries:
-        if "PIN=" not in entry:
-            continue
+        user = fields.get("PIN")
+        timestamp = fields.get("Time")
+        status = fields.get("Status", "0")
 
-        parts = entry.split("&")
-        user = parts[0].replace("PIN=", "").strip()
-        ts = parts[1].replace("Time=", "").strip()
-        status = parts[2].replace("Status=", "").strip()
+        insert_attendance(user, timestamp, status)
 
-        name = EMPLOYEE_NAMES.get(user, "Unknown")
-
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO logs (user_id, name, timestamp, status) VALUES (?, ?, ?, ?)",
-            (user, name, ts, status),
-        )
-        conn.commit()
-        conn.close()
+        print("\n------ ZKTeco Log Stored ------")
+        print(raw)
+        print("--------------------------------")
 
     return "OK"
 
 
+# ---------------------- Required by ZKTeco ----------------------
 @app.get("/iclock/getrequest")
 def zkteco_getreq():
     return "OK"
 
 
-# ---------------------- Dashboard UI ----------------------
-@app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
-
-
-# ---------------------- Generate XLSX ----------------------
-@app.post("/download")
-async def download_excel(date: str = Form(...)):
-    excel_path = generate_excel(date)
-    return FileResponse(excel_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=f"{date}.xlsx")
+# ---------------------- Heartbeat ----------------------
+@app.get("/heartbeat")
+def heartbeat():
+    return {"status": "alive", "time": str(datetime.utcnow())}

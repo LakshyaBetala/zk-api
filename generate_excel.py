@@ -1,13 +1,21 @@
-from openpyxl import Workbook
+import openpyxl
+from db import get_attendance_by_date
+from names import EMPLOYEE_NAMES
 
-def create_excel(rows):
-    wb = Workbook()
+
+def create_excel(date):
+    records = get_attendance_by_date(date)
+
+    wb = openpyxl.Workbook()
     ws = wb.active
-    ws.append(["User ID", "Name", "Time", "Status"])
+    ws.title = date
 
-    for row in rows:
-        ws.append(list(row))
+    ws.append(["User ID", "Name", "Timestamp", "Status"])
 
-    file_path = "attendance_export.xlsx"
-    wb.save(file_path)
-    return file_path
+    for user_id, timestamp, status in records:
+        name = EMPLOYEE_NAMES.get(str(user_id), "Unknown")
+        ws.append([user_id, name, timestamp, status])
+
+    filename = f"{date}.xlsx"
+    wb.save(filename)
+    return filename
