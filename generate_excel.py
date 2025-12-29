@@ -1,10 +1,8 @@
 import openpyxl
-from db import get_attendance_by_date
-from names import EMPLOYEE_NAMES
-
+from db import get_logs_by_date
 
 def create_excel(date):
-    records = get_attendance_by_date(date)
+    records = get_logs_by_date(date)
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -12,9 +10,8 @@ def create_excel(date):
 
     ws.append(["User ID", "Name", "Timestamp", "Status"])
 
-    for user_id, timestamp, status in records:
-        name = EMPLOYEE_NAMES.get(str(user_id), "Unknown")
-        ws.append([user_id, name, timestamp, status])
+    for pin, name, timestamp, status in records:
+        ws.append([pin, name, timestamp, status])
 
     filename = f"{date}.xlsx"
     wb.save(filename)
